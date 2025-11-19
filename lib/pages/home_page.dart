@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'package:ble_app/components/google_user.dart';
 import 'package:ble_app/pages/connect_page.dart';
 import 'package:ble_app/pages/emergeny_page.dart';
 import 'package:ble_app/pages/map_page.dart';
 import 'package:ble_app/pages/notfy_police.dart';
+import 'package:ble_app/pages/profile-page.dart';
 import 'package:ble_app/pages/settings_page.dart';
 import 'package:ble_app/components/sms_helper.dart';
 import 'package:ble_app/services/emergency_service.dart';
@@ -209,10 +211,12 @@ class _HomePageState extends State<HomePage> {
             IconButton(
               icon: const Icon(Icons.person),
               onPressed: () {
-                //   Navigator.push(
-                //     context,
-                //     MaterialPageRoute(builder: (context) => const ProfilePage()),
-                //   );
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProfilePage(user: globalGoogleUser!),
+                  ),
+                );
               },
             ),
           ],

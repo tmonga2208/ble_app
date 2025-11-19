@@ -1,3 +1,5 @@
+import 'package:ble_app/pages/email_page.dart';
+import 'package:ble_app/pages/google_example.dart';
 import 'package:flutter/material.dart';
 import 'connect_page.dart';
 
@@ -42,7 +44,12 @@ class OnboardPage extends StatelessWidget {
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 24.0),
             child: ElevatedButton.icon(
-              onPressed: () async {},
+              onPressed: () async {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => LoginPage()),
+                );
+              },
               icon: const Icon(Icons.email_outlined, size: 20),
               label: const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16.0, horizontal: 24.0),
@@ -57,17 +64,7 @@ class OnboardPage extends StatelessWidget {
 
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: ElevatedButton.icon(
-              onPressed: () async {},
-              icon: const Icon(Icons.g_mobiledata_rounded, size: 30),
-              label: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16.0, horizontal: 24.0),
-                child: Text(
-                  'Continue With Google',
-                  style: TextStyle(fontSize: 15),
-                ),
-              ),
-            ),
+            child: SignInDemo(),
           ),
           const SizedBox(height: 20),
 

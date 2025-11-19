@@ -237,6 +237,7 @@
 //   }
 // }
 
+import 'package:ble_app/pages/google_example.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ble_app/services/ble_background_service.dart';

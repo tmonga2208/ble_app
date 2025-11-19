@@ -15,7 +15,7 @@ Future<void> sendEmergencySMS({
     final bool? permissionsGranted = await telephony.requestSmsPermissions;
     if (permissionsGranted ?? false) {
       for (final phone in contacts) {
-        await telephony.sendSms(to: phone, message: message);
+        await telephony.sendSmsByDefaultApp(to: phone, message: message);
       }
     } else {
       print("SMS permission not granted");
