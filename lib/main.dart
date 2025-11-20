@@ -242,7 +242,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ble_app/services/ble_background_service.dart';
 import 'package:ble_app/services/notification_service.dart';
+import 'package:ble_app/services/auth_service.dart';
 import 'pages/onboard_page.dart';
+import 'pages/connect_page.dart';
 
 void main() async {
   // Ensure Flutter is initialized before any async operations
@@ -328,8 +330,59 @@ class MyApp extends StatelessWidget {
       // 👇 This lets the app switch automatically based on system settings
       themeMode: ThemeMode.system,
 
-      // Starting page
-      home: const OnboardPage(),
+      // Starting page - check authentication state
+      home: const AuthCheckPage(),
+    );
+  }
+}
+
+/// Page that checks authentication state and navigates accordingly
+class AuthCheckPage extends StatefulWidget {
+  const AuthCheckPage({super.key});
+
+  @override
+  State<AuthCheckPage> createState() => _AuthCheckPageState();
+}
+
+class _AuthCheckPageState extends State<AuthCheckPage> {
+  bool _isChecking = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuthState();
+  }
+
+  Future<void> _checkAuthState() async {
+    final isAuthenticated = await AuthService.isAuthenticated();
+    
+    if (mounted) {
+      setState(() {
+        _isChecking = false;
+      });
+
+      // If already logged in or guest, go to connect page
+      // Otherwise show onboard page
+      if (isAuthenticated) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const ConnectPage()),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const OnboardPage()),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
     );
   }
 }

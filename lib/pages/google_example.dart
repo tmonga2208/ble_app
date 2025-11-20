@@ -8,6 +8,7 @@ import 'dart:async';
 
 import 'package:ble_app/components/google_user.dart';
 import 'package:ble_app/pages/connect_page.dart';
+import 'package:ble_app/services/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -65,6 +66,14 @@ class _SignInDemoState extends State<SignInDemo> {
       globalGoogleUser = user;
       _errorMessage = '';
     });
+
+    // Save login state when user successfully signs in
+    if (user != null) {
+      await AuthService.saveLoginState('google', isGuest: false);
+    } else {
+      // Clear auth state on sign out
+      await AuthService.clearAuthState();
+    }
   }
 
   Future<void> _handleAuthenticationError(Object e) async {

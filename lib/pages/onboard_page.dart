@@ -1,6 +1,7 @@
 import 'package:ble_app/pages/email_page.dart';
 import 'package:ble_app/pages/google_example.dart';
 import 'package:flutter/material.dart';
+import 'package:ble_app/services/auth_service.dart';
 import 'connect_page.dart';
 
 class AppColors {
@@ -71,7 +72,10 @@ class OnboardPage extends StatelessWidget {
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 24.0),
             child: ElevatedButton.icon(
-              onPressed: () {
+              onPressed: () async {
+                // Save guest mode preference
+                await AuthService.saveGuestMode();
+                // Navigate to connect page
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const ConnectPage()),
