@@ -86,7 +86,7 @@ class NotificationService {
 
     await _notifications.show(
       1,
-      '🚨 Emergency Alert',
+      ' Emergency Alert',
       body,
       notificationDetails,
       payload: 'emergency',

@@ -6,7 +6,7 @@ import 'package:flutter_background_service_ios/flutter_background_service_ios.da
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:ble_app/components/sms_helper.dart';
+import 'package:ble_app/components/email_helper.dart';
 import 'package:ble_app/services/emergency_service.dart';
 import 'package:ble_app/services/notification_service.dart';
 
@@ -416,9 +416,10 @@ class BleBackgroundService {
         service.invoke('error', {'message': 'Notification error: $e'});
       }
 
-      // Send emergency SMS
-      await sendEmergencySMS(
-        contacts: contacts,
+      // Send emergency email in background
+      await sendEmergencyEmail(
+        recipients: contacts,
+        subject: "Emergency Alert",
         message: message,
       );
 

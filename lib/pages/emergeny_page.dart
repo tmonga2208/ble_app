@@ -12,6 +12,7 @@ class EmergencyPage extends StatefulWidget {
 }
 
 class _EmergencyPageState extends State<EmergencyPage> {
+  final _formKey = GlobalKey<FormState>();
   final TextEditingController _messageController = TextEditingController(
     text: "This is an emergency message. Please help me as soon as possible.",
   );
@@ -201,20 +202,18 @@ class _EmergencyPageState extends State<EmergencyPage> {
       final Contact? contact = await FlutterContacts.openExternalPick();
       
       if (contact != null) {
-        // Get the first phone number from the contact
-        if (contact.phones.isNotEmpty) {
-          // Clean phone number (remove spaces, dashes, etc.)
-          String phone = contact.phones.first.number;
-          phone = phone.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+        // Get the first email address from the contact
+        if (contact.emails.isNotEmpty) {
+          String email = contact.emails.first.address.trim();
           
           setState(() {
-            _contactControllers.add(TextEditingController(text: phone));
+            _contactControllers.add(TextEditingController(text: email));
           });
           await _saveEmergencyData();
           
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text("Added ${contact.displayName}'s phone number"),
+              content: Text("Added ${contact.displayName}'s email address"),
               behavior: SnackBarBehavior.floating,
               duration: const Duration(seconds: 2),
             ),
@@ -222,7 +221,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text("Selected contact has no phone number."),
+              content: Text("Selected contact has no email address."),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -253,10 +252,12 @@ class _EmergencyPageState extends State<EmergencyPage> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return WillPopScope(
-      onWillPop: () async {
-        await _saveEmergencyData();
-        return true;
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (!didPop) {
+          await _saveEmergencyData();
+        }
       },
       child: Scaffold(
         backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
@@ -272,73 +273,97 @@ class _EmergencyPageState extends State<EmergencyPage> {
               children: [
                 // ---------------- EMERGENCY CONTACTS ----------------
                 Text(
-                  "Emergency Contacts",
+                  "Emergency Email Contacts",
                   style: TextStyle(
                     color: isDark ? Colors.white : Colors.black,
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  "Add email addresses that will receive emergency alerts",
+                  style: TextStyle(
+                    color: isDark ? Colors.white70 : Colors.black87,
+                    fontSize: 14,
+                  ),
+                ),
                 const SizedBox(height: 12),
 
-                Column(
-                  children: [
-                    for (int i = 0; i < _contactControllers.length; i++)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6.0),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _contactControllers[i],
-                                keyboardType: TextInputType.phone,
-                                style: TextStyle(
-                                  color: isDark ? Colors.white : Colors.black,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: "Contact ${i + 1} phone number",
-                                  filled: true,
-                                  fillColor: isDark
-                                      ? const Color(0xFF2C2C2E)
-                                      : Colors.grey.shade200,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide.none,
+                Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      for (int i = 0; i < _contactControllers.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6.0),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _contactControllers[i],
+                                  keyboardType: TextInputType.emailAddress,
+                                  style: TextStyle(
+                                    color: isDark ? Colors.white : Colors.black,
                                   ),
+                                  decoration: InputDecoration(
+                                    hintText: "Contact ${i + 1} email address",
+                                    filled: true,
+                                    fillColor: isDark
+                                        ? const Color(0xFF2C2C2E)
+                                        : Colors.grey.shade200,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return null; // Allow empty for optional fields
+                                    }
+                                    if (!value.contains('@') || !value.contains('.')) {
+                                      return 'Please enter a valid email address';
+                                    }
+                                    return null;
+                                  },
+                                  onChanged: (value) {
+                                    // Auto-save on change
+                                    _saveEmergencyData();
+                                  },
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: Icon(
-                                Icons.delete,
-                                color: isDark ? Colors.red[300] : Colors.red,
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: Icon(
+                                  Icons.delete,
+                                  color: isDark ? Colors.red[300] : Colors.red,
+                                ),
+                                onPressed: () => _removeContact(i),
                               ),
-                              onPressed: () => _removeContact(i),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
 
-                    // Buttons to add contacts
-                    Row(
-                      children: [
-                        if (_contactControllers.length < 5)
-                          TextButton.icon(
-                            onPressed: _addContact,
-                            icon: const Icon(Icons.add),
-                            label: const Text("Add Manually"),
-                          ),
-                        const SizedBox(width: 8),
-                        if (_contactControllers.length < 5)
-                          TextButton.icon(
-                            onPressed: _addFromContacts,
-                            icon: const Icon(Icons.contacts),
-                            label: const Text("Add from Contacts"),
-                          ),
-                      ],
-                    ),
-                  ],
+                      // Buttons to add contacts
+                      Row(
+                        children: [
+                          if (_contactControllers.length < 5)
+                            TextButton.icon(
+                              onPressed: _addContact,
+                              icon: const Icon(Icons.add),
+                              label: const Text("Add Manually"),
+                            ),
+                          const SizedBox(width: 8),
+                          if (_contactControllers.length < 5)
+                            TextButton.icon(
+                              onPressed: _addFromContacts,
+                              icon: const Icon(Icons.contacts),
+                              label: const Text("Add from Contacts"),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
 
                 const SizedBox(height: 32),
@@ -377,7 +402,7 @@ class _EmergencyPageState extends State<EmergencyPage> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         backgroundColor: _isEditingMessage
-                            ? Colors.blueAccent.withOpacity(0.2)
+                            ? Colors.blueAccent.withValues(alpha: 0.2)
                             : null,
                       ),
                       icon: Icon(

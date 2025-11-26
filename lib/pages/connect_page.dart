@@ -1,7 +1,9 @@
 import 'package:ble_app/components/peppy_animate.dart';
+import 'package:ble_app/components/email_helper.dart';
 import 'package:flutter/material.dart';
 import '../services/ble_manager.dart';
 import 'home_page.dart';
+import 'smtp_config_page.dart';
 
 class ConnectPage extends StatefulWidget {
   const ConnectPage({super.key});
@@ -18,6 +20,7 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   void initState() {
     super.initState();
+    _checkSmtpConfiguration();
     ble.requestLocationPermission();
 
     // ✅ Start scanning immediately
@@ -45,6 +48,26 @@ class _ConnectPageState extends State<ConnectPage> {
         });
       }
     });
+  }
+
+  Future<void> _checkSmtpConfiguration() async {
+    // Check if SMTP is configured, if not show configuration page
+    final isConfigured = await isSmtpConfigured();
+    if (!isConfigured && mounted) {
+      // Wait a bit for the page to build, then show SMTP config
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (mounted) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const SmtpConfigPage(isRequired: true),
+            ),
+          );
+          // If user cancelled or didn't save, we still continue
+          // They can configure it later from settings
+        }
+      });
+    }
   }
 
   @override

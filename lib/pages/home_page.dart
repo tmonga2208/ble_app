@@ -6,7 +6,7 @@ import 'package:ble_app/pages/map_page.dart';
 import 'package:ble_app/pages/notfy_police.dart';
 import 'package:ble_app/pages/profile-page.dart';
 import 'package:ble_app/pages/settings_page.dart';
-import 'package:ble_app/components/sms_helper.dart';
+import 'package:ble_app/components/email_helper.dart';
 import 'package:ble_app/services/emergency_service.dart';
 import 'package:ble_app/services/ble_background_service.dart';
 import 'package:ble_app/services/notification_service.dart';
@@ -494,11 +494,15 @@ class _HomePageState extends State<HomePage> {
         contactCount: contacts.length,
       );
 
-      // Send emergency SMS
-      await sendEmergencySMS(contacts: contacts, message: message);
+      // Send emergency email in background
+      await sendEmergencyEmail(
+        recipients: contacts,
+        subject: "Emergency Alert",
+        message: message,
+      );
 
       setState(() {
-        _status = "🚨 Emergency message sent to ${contacts.length} contact(s)";
+        _status = "Emergency email sent to ${contacts.length} contact(s)";
       });
     } catch (e) {
       setState(() {
