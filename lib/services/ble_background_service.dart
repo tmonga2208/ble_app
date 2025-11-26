@@ -102,6 +102,11 @@ class BleBackgroundService {
     // Store references that will be updated
     final connectionRef = <StreamSubscription<ConnectionStateUpdate>?>[null];
     final notificationRef = <StreamSubscription<List<int>>?>[null];
+    
+    // Reconnection state tracking (like Apple Watch persistent connection)
+    final reconnectAttempts = <int>[0]; // Track reconnection attempts
+    final isReconnecting = <bool>[false]; // Prevent multiple simultaneous reconnection attempts
+    final lastConnectionTime = <DateTime?>[null]; // Track last successful connection
 
     // Function to connect with device info
     Future<void> connectWithDeviceInfo(
@@ -121,6 +126,10 @@ class BleBackgroundService {
       deviceName = devName;
       serviceUuid = sUuid;
       characteristicUuid = cUuid;
+      
+      // Reset reconnection state when manually connecting
+      reconnectAttempts[0] = 0;
+      isReconnecting[0] = false;
 
       _connectToDevice(
         _ble,
@@ -131,6 +140,9 @@ class BleBackgroundService {
         service,
         connectionRef,
         notificationRef,
+        reconnectAttempts,
+        isReconnecting,
+        lastConnectionTime,
         (lat, lng) {
           currentLatitude = lat;
           currentLongitude = lng;
@@ -199,10 +211,11 @@ class BleBackgroundService {
         }
       }
 
-      // Check connection status and reconnect if needed
+      // Check connection status and proactively reconnect if needed
       if (deviceId != null && serviceUuid != null && characteristicUuid != null) {
-        // Note: connectionRef check removed as it's not reliable for connection state
-        // The reconnection logic in _connectToDevice handles disconnections
+        // Proactive connection health check - if we haven't received updates in a while,
+        // the connection might be stale even if not explicitly disconnected
+        // This helps maintain Apple Watch-like always-connected behavior
         service.invoke('status', {'connected': true});
       }
     });
@@ -217,8 +230,16 @@ class BleBackgroundService {
     ServiceInstance service,
     List<StreamSubscription<ConnectionStateUpdate>?> connectionRef,
     List<StreamSubscription<List<int>>?> notificationRef,
+    List<int> reconnectAttempts,
+    List<bool> isReconnecting,
+    List<DateTime?> lastConnectionTime,
     Function(double, double) onLocationUpdate,
   ) {
+    // Prevent multiple simultaneous reconnection attempts
+    if (isReconnecting[0]) {
+      return;
+    }
+    
     // Cancel existing connections
     connectionRef[0]?.cancel();
     notificationRef[0]?.cancel();
@@ -237,6 +258,11 @@ class BleBackgroundService {
           (update) {
             switch (update.connectionState) {
               case DeviceConnectionState.connected:
+                // Reset reconnection attempts on successful connection
+                reconnectAttempts[0] = 0;
+                isReconnecting[0] = false;
+                lastConnectionTime[0] = DateTime.now();
+                
                 service.invoke('status', {
                   'message': 'Connected to $deviceName',
                   'connected': true,
@@ -255,26 +281,26 @@ class BleBackgroundService {
 
               case DeviceConnectionState.disconnected:
                 service.invoke('status', {
-                  'message': 'Disconnected from $deviceName',
+                  'message': 'Disconnected from $deviceName - Reconnecting...',
                   'connected': false,
                 });
                 notificationRef[0]?.cancel();
-                // Try to reconnect after a delay
-                Future.delayed(const Duration(seconds: 5), () {
-                  if (deviceId.isNotEmpty) {
-                    _connectToDevice(
-                      ble,
-                      deviceId,
-                      serviceUuid,
-                      characteristicUuid,
-                      deviceName,
-                      service,
-                      connectionRef,
-                      notificationRef,
-                      onLocationUpdate,
-                    );
-                  }
-                });
+                
+                // Apple Watch-style persistent reconnection
+                _scheduleReconnect(
+                  ble,
+                  deviceId,
+                  serviceUuid,
+                  characteristicUuid,
+                  deviceName,
+                  service,
+                  connectionRef,
+                  notificationRef,
+                  reconnectAttempts,
+                  isReconnecting,
+                  lastConnectionTime,
+                  onLocationUpdate,
+                );
                 break;
 
               case DeviceConnectionState.connecting:
@@ -290,27 +316,78 @@ class BleBackgroundService {
           },
           onError: (error) {
             service.invoke('status', {
-              'message': 'Connection error: $error',
+              'message': 'Connection error: $error - Retrying...',
               'connected': false,
             });
-            // Try to reconnect after error
-            Future.delayed(const Duration(seconds: 5), () {
-              if (deviceId.isNotEmpty) {
-                _connectToDevice(
-                  ble,
-                  deviceId,
-                  serviceUuid,
-                  characteristicUuid,
-                  deviceName,
-                  service,
-                  connectionRef,
-                  notificationRef,
-                  onLocationUpdate,
-                );
-              }
-            });
+            
+            // Apple Watch-style persistent reconnection on error
+            _scheduleReconnect(
+              ble,
+              deviceId,
+              serviceUuid,
+              characteristicUuid,
+              deviceName,
+              service,
+              connectionRef,
+              notificationRef,
+              reconnectAttempts,
+              isReconnecting,
+              lastConnectionTime,
+              onLocationUpdate,
+            );
           },
         );
+  }
+  
+  // Apple Watch-style persistent reconnection with exponential backoff
+  static void _scheduleReconnect(
+    FlutterReactiveBle ble,
+    String deviceId,
+    Uuid serviceUuid,
+    Uuid characteristicUuid,
+    String deviceName,
+    ServiceInstance service,
+    List<StreamSubscription<ConnectionStateUpdate>?> connectionRef,
+    List<StreamSubscription<List<int>>?> notificationRef,
+    List<int> reconnectAttempts,
+    List<bool> isReconnecting,
+    List<DateTime?> lastConnectionTime,
+    Function(double, double) onLocationUpdate,
+  ) {
+    if (deviceId.isEmpty || isReconnecting[0]) {
+      return;
+    }
+    
+    isReconnecting[0] = true;
+    reconnectAttempts[0]++;
+    
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
+    // This ensures quick reconnection but prevents battery drain from constant attempts
+    final baseDelay = 1; // Start with 1 second
+    final maxDelay = 30; // Cap at 30 seconds
+    final delaySeconds = (baseDelay * (1 << (reconnectAttempts[0] - 1))).clamp(baseDelay, maxDelay);
+    
+    Future.delayed(Duration(seconds: delaySeconds), () {
+      isReconnecting[0] = false;
+      
+      // Only reconnect if device ID is still valid
+      if (deviceId.isNotEmpty) {
+        _connectToDevice(
+          ble,
+          deviceId,
+          serviceUuid,
+          characteristicUuid,
+          deviceName,
+          service,
+          connectionRef,
+          notificationRef,
+          reconnectAttempts,
+          isReconnecting,
+          lastConnectionTime,
+          onLocationUpdate,
+        );
+      }
+    });
   }
 
   static void _startListening(

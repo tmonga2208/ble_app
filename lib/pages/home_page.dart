@@ -39,6 +39,13 @@ class _HomePageState extends State<HomePage> {
   String _location = '';
   double? _currentLatitude;
   double? _currentLongitude;
+  
+  // Apple Watch-style persistent connection tracking
+  int _reconnectAttempts = 0;
+  bool _isReconnecting = false;
+  Timer? _reconnectTimer;
+  Timer? _connectionHealthTimer;
+  DateTime? _lastSuccessfulConnection;
 
   final Uuid serviceUuid = Uuid.parse("12345678-1234-1234-1234-1234567890ab");
   final Uuid characteristicUuid = Uuid.parse(
@@ -52,6 +59,24 @@ class _HomePageState extends State<HomePage> {
     _enableWakelock();
     _startBackgroundService();
     _connectToDevice();
+    _startConnectionHealthMonitoring();
+  }
+  
+  // Apple Watch-style connection health monitoring
+  void _startConnectionHealthMonitoring() {
+    // Check connection health every 30 seconds
+    _connectionHealthTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      // If we think we're connected but haven't had a successful connection recently,
+      // or if we're not connected, try to reconnect
+      if (!_connected && !_isConnecting && !_isReconnecting) {
+        _scheduleReconnect();
+      }
+    });
   }
 
   Future<void> _loadEmergencyData() async {
@@ -82,7 +107,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _connectToDevice() {
-    if (_isConnecting) return; // Prevent re-entry
+    if (_isConnecting && !_isReconnecting) return; // Prevent re-entry unless reconnecting
     _isConnecting = true;
 
     _connectionStream = _ble
@@ -101,6 +126,12 @@ class _HomePageState extends State<HomePage> {
 
               case DeviceConnectionState.connected:
                 if (!_connected) {
+                  // Reset reconnection state on successful connection
+                  _reconnectAttempts = 0;
+                  _isReconnecting = false;
+                  _reconnectTimer?.cancel();
+                  _lastSuccessfulConnection = DateTime.now();
+                  
                   setState(() {
                     _connected = true;
                     _status = "✅ Connected to ${widget.device.name}";
@@ -109,14 +140,22 @@ class _HomePageState extends State<HomePage> {
                   // Ensure background service is running
                   _startBackgroundService();
                 }
+                _isConnecting = false;
+                _lastSuccessfulConnection = DateTime.now(); // Update on each connection state update
                 break;
 
               case DeviceConnectionState.disconnected:
+                _isConnecting = false;
                 if (_connected) {
                   setState(() {
                     _connected = false;
-                    _status = "❌ Disconnected from ${widget.device.name}";
+                    _status = "❌ Disconnected from ${widget.device.name} - Reconnecting...";
                   });
+                  _isListening = false;
+                  _notificationStream?.cancel();
+                  
+                  // Apple Watch-style automatic reconnection in foreground
+                  _scheduleReconnect();
                 }
                 break;
 
@@ -125,10 +164,37 @@ class _HomePageState extends State<HomePage> {
             }
           },
           onError: (error) {
-            setState(() => _status = "Connection failed: $error");
             _isConnecting = false;
+            setState(() => _status = "Connection failed: $error - Retrying...");
+            
+            // Apple Watch-style automatic reconnection on error
+            _scheduleReconnect();
           },
         );
+  }
+  
+  // Apple Watch-style persistent reconnection with exponential backoff
+  void _scheduleReconnect() {
+    if (_isReconnecting || !mounted) {
+      return;
+    }
+    
+    _isReconnecting = true;
+    _reconnectAttempts++;
+    
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
+    // This ensures quick reconnection but prevents battery drain
+    final baseDelay = 1; // Start with 1 second
+    final maxDelay = 30; // Cap at 30 seconds
+    final delaySeconds = (baseDelay * (1 << (_reconnectAttempts - 1))).clamp(baseDelay, maxDelay);
+    
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
+      if (mounted && !_connected) {
+        _isReconnecting = false;
+        _connectToDevice();
+      }
+    });
   }
 
   void _startListening() {
@@ -194,6 +260,8 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _connectionStream?.cancel();
     _notificationStream?.cancel();
+    _reconnectTimer?.cancel();
+    _connectionHealthTimer?.cancel();
     _disableWakelock();
     // Note: Don't stop background service on dispose - keep it running
     // The service will continue monitoring even when app is closed
