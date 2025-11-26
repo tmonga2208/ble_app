@@ -107,6 +107,10 @@ class BleBackgroundService {
     final reconnectAttempts = <int>[0]; // Track reconnection attempts
     final isReconnecting = <bool>[false]; // Prevent multiple simultaneous reconnection attempts
     final lastConnectionTime = <DateTime?>[null]; // Track last successful connection
+    
+    // Track connection state for notification updates
+    // This state persists even when app is closed - like Apple Watch
+    final isCurrentlyConnected = <bool>[false];
 
     // Function to connect with device info
     Future<void> connectWithDeviceInfo(
@@ -143,6 +147,7 @@ class BleBackgroundService {
         reconnectAttempts,
         isReconnecting,
         lastConnectionTime,
+        isCurrentlyConnected,
         (lat, lng) {
           currentLatitude = lat;
           currentLongitude = lng;
@@ -195,17 +200,23 @@ class BleBackgroundService {
         }
       }
     });
-
+    
     // Periodic task to keep service alive and update notification
+    // This ensures the service stays alive even when app is closed
     Timer.periodic(const Duration(seconds: 30), (timer) async {
       if (service is AndroidServiceInstance) {
         if (await service.isForegroundService()) {
+          // Update notification to show connection status
+          // This notification persists even when app is closed - like Apple Watch
+          final connectionStatus = isCurrentlyConnected[0] ? "✅ Connected" : "🔄 Reconnecting";
           service.setForegroundNotificationInfo(
             title: deviceName != null
-                ? "Connected to $deviceName"
+                ? "$connectionStatus to $deviceName"
                 : "BLE Connection Active",
             content: deviceId != null
-                ? "Monitoring for emergency alerts"
+                ? (isCurrentlyConnected[0] 
+                    ? "Monitoring for emergency alerts"
+                    : "Attempting to reconnect...")
                 : "Waiting for device connection",
           );
         }
@@ -216,7 +227,7 @@ class BleBackgroundService {
         // Proactive connection health check - if we haven't received updates in a while,
         // the connection might be stale even if not explicitly disconnected
         // This helps maintain Apple Watch-like always-connected behavior
-        service.invoke('status', {'connected': true});
+        service.invoke('status', {'connected': isCurrentlyConnected[0]});
       }
     });
   }
@@ -233,6 +244,7 @@ class BleBackgroundService {
     List<int> reconnectAttempts,
     List<bool> isReconnecting,
     List<DateTime?> lastConnectionTime,
+    List<bool> isCurrentlyConnected,
     Function(double, double) onLocationUpdate,
   ) {
     // Prevent multiple simultaneous reconnection attempts
@@ -262,11 +274,22 @@ class BleBackgroundService {
                 reconnectAttempts[0] = 0;
                 isReconnecting[0] = false;
                 lastConnectionTime[0] = DateTime.now();
+                isCurrentlyConnected[0] = true; // Mark as connected
                 
+                // Update connection state - this persists even when app is closed
                 service.invoke('status', {
                   'message': 'Connected to $deviceName',
                   'connected': true,
                 });
+                
+                // Update notification to show connected status
+                // This notification stays visible even when app is closed - like Apple Watch
+                if (service is AndroidServiceInstance) {
+                  service.setForegroundNotificationInfo(
+                    title: "✅ Connected to $deviceName",
+                    content: "Monitoring for emergency alerts",
+                  );
+                }
 
                 _startListening(
                   ble,
@@ -280,13 +303,24 @@ class BleBackgroundService {
                 break;
 
               case DeviceConnectionState.disconnected:
+                isCurrentlyConnected[0] = false; // Mark as disconnected
                 service.invoke('status', {
                   'message': 'Disconnected from $deviceName - Reconnecting...',
                   'connected': false,
                 });
                 notificationRef[0]?.cancel();
                 
+                // Update notification to show reconnecting status
+                // This notification persists even when app is closed - like Apple Watch
+                if (service is AndroidServiceInstance) {
+                  service.setForegroundNotificationInfo(
+                    title: "🔄 Reconnecting to $deviceName",
+                    content: "Maintaining connection...",
+                  );
+                }
+                
                 // Apple Watch-style persistent reconnection
+                // This will keep trying even when app is closed
                 _scheduleReconnect(
                   ble,
                   deviceId,
@@ -299,6 +333,7 @@ class BleBackgroundService {
                   reconnectAttempts,
                   isReconnecting,
                   lastConnectionTime,
+                  isCurrentlyConnected,
                   onLocationUpdate,
                 );
                 break;
@@ -321,6 +356,7 @@ class BleBackgroundService {
             });
             
             // Apple Watch-style persistent reconnection on error
+            isCurrentlyConnected[0] = false; // Mark as disconnected on error
             _scheduleReconnect(
               ble,
               deviceId,
@@ -333,6 +369,7 @@ class BleBackgroundService {
               reconnectAttempts,
               isReconnecting,
               lastConnectionTime,
+              isCurrentlyConnected,
               onLocationUpdate,
             );
           },
@@ -352,6 +389,7 @@ class BleBackgroundService {
     List<int> reconnectAttempts,
     List<bool> isReconnecting,
     List<DateTime?> lastConnectionTime,
+    List<bool> isCurrentlyConnected,
     Function(double, double) onLocationUpdate,
   ) {
     if (deviceId.isEmpty || isReconnecting[0]) {
@@ -384,6 +422,7 @@ class BleBackgroundService {
           reconnectAttempts,
           isReconnecting,
           lastConnectionTime,
+          isCurrentlyConnected,
           onLocationUpdate,
         );
       }
@@ -539,6 +578,34 @@ class BleBackgroundService {
     await prefs.remove(_prefsDeviceNameKey);
     await prefs.remove(_prefsServiceUuidKey);
     await prefs.remove(_prefsCharacteristicUuidKey);
+  }
+  
+  /// Check if background service has a saved device connection
+  static Future<bool> hasPersistedConnection() async {
+    final prefs = await SharedPreferences.getInstance();
+    final deviceId = prefs.getString(_prefsDeviceIdKey);
+    final serviceUuid = prefs.getString(_prefsServiceUuidKey);
+    final charUuid = prefs.getString(_prefsCharacteristicUuidKey);
+    return deviceId != null && serviceUuid != null && charUuid != null;
+  }
+  
+  /// Get persisted device info
+  static Future<Map<String, String>?> getPersistedDeviceInfo() async {
+    final prefs = await SharedPreferences.getInstance();
+    final deviceId = prefs.getString(_prefsDeviceIdKey);
+    final deviceName = prefs.getString(_prefsDeviceNameKey);
+    final serviceUuid = prefs.getString(_prefsServiceUuidKey);
+    final charUuid = prefs.getString(_prefsCharacteristicUuidKey);
+    
+    if (deviceId != null && serviceUuid != null && charUuid != null) {
+      return {
+        'deviceId': deviceId,
+        'deviceName': deviceName ?? 'Device',
+        'serviceUuid': serviceUuid,
+        'characteristicUuid': charUuid,
+      };
+    }
+    return null;
   }
 }
 
